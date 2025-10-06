@@ -87,7 +87,8 @@ except TimeoutException:
 # Log in
 try:
     print("🔐 Logging in...")
-    driver.find_element(By.CSS_SELECTOR, ".sign-in-dropdown__toggle").click()
+    login_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".sign-in-dropdown__toggle")))
+    driver.execute_script("arguments[0].click();", login_button)
     wait.until(EC.visibility_of_element_located((By.NAME, "username"))).send_keys("contact@targetupconsulting.com")
     driver.find_element(By.NAME, "password").send_keys("TargetUp2024@@")
     driver.find_element(By.CSS_SELECTOR, "button.button-primary-blue").click()
