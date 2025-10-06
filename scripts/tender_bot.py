@@ -176,7 +176,7 @@ for idx, tender_url in enumerate(urls, start=1):
         time.sleep(5)
     else:
         print("❌ Webhook failed, stopping process.")
-        break
+        
 
     # Cleanup
     for f in downloaded_files + [zip_path]:
