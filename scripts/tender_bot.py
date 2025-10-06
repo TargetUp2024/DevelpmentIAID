@@ -1,5 +1,7 @@
 import os
 import time
+import zipfile
+import mimetypes
 import requests
 from datetime import datetime
 from selenium import webdriver
@@ -7,16 +9,22 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    StaleElementReferenceException
+)
 
 # ------------------------
-# Setup for GitHub Actions
+# Configuration
 # ------------------------
-DOWNLOAD_DIR = "/home/runner/downloads"
+N8N_WEBHOOK_URL = "https://anasellll.app.n8n.cloud/webhook/f234915f-8cdc-4838-8bf8-c3ee74680513"
+DOWNLOAD_DIR = "/home/runner/work/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-WEBHOOK_URL = "https://anasellll.app.n8n.cloud/webhook-test/f234915f-8cdc-4838-8bf8-c3ee74680513"
-
+# ------------------------
+# Selenium setup
+# ------------------------
 options = webdriver.ChromeOptions()
 prefs = {
     "download.default_directory": DOWNLOAD_DIR,
@@ -35,18 +43,48 @@ driver = webdriver.Chrome(service=service, options=options)
 wait = WebDriverWait(driver, 15)
 
 # ------------------------
-# Open site & login
+# Helper functions
 # ------------------------
+def zip_files(file_paths, zip_name):
+    """Compress a list of files into a zip archive."""
+    zip_path = os.path.join(DOWNLOAD_DIR, zip_name)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for f in file_paths:
+            try:
+                zipf.write(f, os.path.basename(f))
+            except Exception as e:
+                print(f"⚠️ Error adding file to ZIP: {e}")
+    return zip_path
+
+
+def send_zip_to_webhook(webhook_url, zip_path, payload):
+    """Send ZIP file to n8n webhook."""
+    try:
+        with open(zip_path, "rb") as f:
+            files = {"file": (os.path.basename(zip_path), f, "application/zip")}
+            response = requests.post(webhook_url, data=payload, files=files)
+        print(f"✅ Sent ZIP → {os.path.basename(zip_path)} (Status: {response.status_code})")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Webhook send failed: {e}")
+        return False
+
+
+# ------------------------
+# Start automation
+# ------------------------
+print("🚀 Starting tender collection bot...")
 driver.get("https://www.developmentaid.org")
+
+# Accept cookies
 try:
-    accept_button = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Accept')]"))
-    )
+    accept_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Accept')]")))
     accept_button.click()
     print("✅ Accepted cookies.")
 except TimeoutException:
-    print("⚠️ Cookie popup not found or already accepted.")
+    print("⚠️ No cookie popup found.")
 
+# Log in
 try:
     print("🔐 Logging in...")
     driver.find_element(By.CSS_SELECTOR, ".sign-in-dropdown__toggle").click()
@@ -61,84 +99,91 @@ except Exception as e:
 # ------------------------
 # Collect tender URLs
 # ------------------------
-# today = datetime.today().strftime("%Y-%m-%d")
-today = "2025-10-05"
+today = datetime.today().strftime("%Y-%m-%d")
+urls = []
 
-for page in range(1, 3):  # two pages max for testing
-    print(f"\n📄 Processing page {page}...")
-    page_url = f"https://www.developmentaid.org/tenders/search?pageNr={page}&pageSize=50&postedFrom={today}"
-    driver.get(page_url)
-    time.sleep(3)
-
-    # Collect links
-    urls = []
+print("\n🔍 Collecting tender URLs...")
+for i in range(1, 2):  # You can increase later
+    url = f"https://www.developmentaid.org/tenders/search?pageNr={i}&pageSize=50&postedFrom={today}"
+    driver.get(url)
+    time.sleep(2)
     try:
         links = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, "search-card__title")))
         for link in links:
             href = link.get_attribute("href")
             if href:
                 urls.append(href)
-        print(f"✅ Found {len(urls)} tenders.")
+        print(f"✅ Page {i}: {len(links)} tenders found.")
     except Exception as e:
-        print(f"⚠️ Could not load page {page}: {e}")
+        print(f"⚠️ Failed to process page {i}: {e}")
+
+print(f"📦 Total URLs collected: {len(urls)}")
+urls = urls[:5]  # Limit for testing in GitHub Actions
+
+# ------------------------
+# Process each tender
+# ------------------------
+for idx, tender_url in enumerate(urls, start=1):
+    print(f"\n{'='*30}\n🔹 [{idx}/{len(urls)}] Processing tender: {tender_url}")
+    driver.get(tender_url)
+    time.sleep(2)
+
+    files_before = set(os.listdir(DOWNLOAD_DIR))
+
+    # Try downloading PDF
+    try:
+        pdf_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Download')]")))
+        driver.execute_script("arguments[0].click();", pdf_button)
+        print("📄 Download started.")
+        time.sleep(5)
+    except TimeoutException:
+        print("⚠️ No job description PDF found.")
+
+    # Check attachments
+    try:
+        attachments = driver.find_elements(By.CSS_SELECTOR, ".download-document")
+        for a in attachments:
+            try:
+                driver.execute_script("arguments[0].click();", a)
+                print(f"📎 Attachment download: {a.text.strip()}")
+                time.sleep(2)
+            except StaleElementReferenceException:
+                continue
+    except Exception as e:
+        print(f"⚠️ Attachment issue: {e}")
+
+    # Identify new downloads
+    files_after = set(os.listdir(DOWNLOAD_DIR))
+    new_files = list(files_after - files_before)
+    downloaded_files = [os.path.join(DOWNLOAD_DIR, f) for f in new_files]
+
+    if not downloaded_files:
+        print("🤔 No files downloaded.")
         continue
 
-    urls = urls[:5]
-    # Visit each tender
-    for idx, tender_url in enumerate(urls[:5], start=1):  # limit for testing
-        print(f"🔹 [{idx}] {tender_url}")
-        driver.get(tender_url)
-        time.sleep(2)
+    # Zip the files
+    zip_name = f"tender_{idx}_{int(time.time())}.zip"
+    zip_path = zip_files(downloaded_files, zip_name)
+    print(f"📦 Zipped {len(downloaded_files)} files → {zip_name}")
 
-        # Try PDF or attachments
-        try:
-            pdf_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Download')]")))
-            driver.execute_script("arguments[0].click();", pdf_button)
-            print("📄 Download triggered.")
-        except TimeoutException:
-            print("⚠️ No PDF found.")
+    # Send to webhook
+    payload = {"tender_url": tender_url, "timestamp": str(datetime.now())}
+    success = send_zip_to_webhook(N8N_WEBHOOK_URL, zip_path, payload)
 
-        time.sleep(3)
-        try:
-            attachments = driver.find_elements(By.CSS_SELECTOR, ".download-document")
-            for a in attachments:
-                driver.execute_script("arguments[0].click();", a)
-                time.sleep(1)
-            if attachments:
-                print(f"📎 {len(attachments)} attachments downloaded.")
-        except Exception as e:
-            print(f"⚠️ Attachments issue: {e}")
-
-    # ------------------------
-    # Send files from this page to n8n
-    # ------------------------
-    print(f"📤 Sending files from page {page} to webhook...")
-    files = []
-    for filename in os.listdir(DOWNLOAD_DIR):
-        filepath = os.path.join(DOWNLOAD_DIR, filename)
-        if os.path.isfile(filepath):
-            files.append(("files", (filename, open(filepath, "rb"))))
-
-    if files:
-        try:
-            response = requests.post(WEBHOOK_URL, files=files)
-            print(f"✅ Sent {len(files)} files — status: {response.status_code}")
-            if response.status_code == 200:
-                print("✅ n8n acknowledged, continuing...")
-            else:
-                print("⚠️ n8n responded with error, stopping...")
-                break
-        except Exception as e:
-            print(f"❌ Webhook error: {e}")
-            break
-        finally:
-            # Close file handles and clean up folder for next page
-            for _, f in files:
-                f[1].close()
-            for f in os.listdir(DOWNLOAD_DIR):
-                os.remove(os.path.join(DOWNLOAD_DIR, f))
+    # Wait for webhook acknowledgment
+    if success:
+        print("⏳ Waiting 5 seconds before next page...")
+        time.sleep(5)
     else:
-        print("⚠️ No files found to send.")
+        print("❌ Webhook failed, stopping process.")
+        break
+
+    # Cleanup
+    for f in downloaded_files + [zip_path]:
+        try:
+            os.remove(f)
+        except Exception:
+            pass
 
 driver.quit()
-print("🏁 All done!")
+print("\n✅ Finished all tenders successfully.")
