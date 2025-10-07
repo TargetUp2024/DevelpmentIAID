@@ -22,6 +22,9 @@ N8N_WEBHOOK_URL = "https://anasellll.app.n8n.cloud/webhook/f234915f-8cdc-4838-8b
 DOWNLOAD_DIR = "/home/runner/work/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+USERNAME = "contact@targetupconsulting.com"
+PASSWORD = "TargetUp2024@@"
+
 # ------------------------
 # Selenium setup
 # ------------------------
@@ -70,6 +73,69 @@ def send_zip_to_webhook(webhook_url, zip_path, payload):
         return False
 
 
+def log(msg):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+
+# ------------------------
+# Headless-friendly login
+# ------------------------
+from selenium.webdriver.common.action_chains import ActionChains
+
+def robust_login(driver, wait, username, password):
+    from datetime import datetime
+    import time
+
+    def log(msg):
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+
+    try:
+        log("🔐 Attempting login...")
+
+        # 1️⃣ Click the login dropdown
+        login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".sign-in-dropdown__toggle")))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", login_button)
+        ActionChains(driver).move_to_element(login_button).click().perform()
+        log("ℹ️ Login dropdown clicked.")
+        time.sleep(1)  # wait for animation
+
+        # 2️⃣ Username input
+        username_input = wait.until(EC.element_to_be_clickable((By.NAME, "username")))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", username_input)
+        ActionChains(driver).move_to_element(username_input).click().send_keys(username).perform()
+        log("ℹ️ Username entered.")
+
+        # 3️⃣ Password input
+        password_input = wait.until(EC.element_to_be_clickable((By.NAME, "password")))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", password_input)
+        ActionChains(driver).move_to_element(password_input).click().send_keys(password).perform()
+        log("ℹ️ Password entered.")
+
+        # 4️⃣ Submit button
+        submit_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.button-primary-blue")))
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
+        ActionChains(driver).move_to_element(submit_button).click().perform()
+        log("ℹ️ Submit button clicked.")
+        
+        time.sleep(2)
+        continue_button = wait.until(EC.element_to_be_clickable(driver.find_element(By.XPATH, "//button[normalize-space()='Continue signing in']")))
+        continue_button.click()
+
+
+        # 5️⃣ Verify login
+        try:
+            account_icon = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".account-user__menu-toggle")))
+            log("✅ Login successful!")
+        except TimeoutException:
+            log("⚠️ Login may have failed: post-login element not found.")
+            driver.save_screenshot("login_debug.png")
+            log("💾 Screenshot saved as login_debug.png for debugging.")
+
+    except Exception as e:
+        log(f"❌ Login failed: {e}")
+        driver.save_screenshot("login_debug.png")
+        log("💾 Screenshot saved as login_debug.png for debugging.")
+
+
 # ------------------------
 # Start automation
 # ------------------------
@@ -83,19 +149,6 @@ try:
     print("✅ Accepted cookies.")
 except TimeoutException:
     print("⚠️ No cookie popup found.")
-
-# Log in
-try:
-    print("🔐 Logging in...")
-    login_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".sign-in-dropdown__toggle")))
-    driver.execute_script("arguments[0].click();", login_button)
-    wait.until(EC.visibility_of_element_located((By.NAME, "username"))).send_keys("contact@targetupconsulting.com")
-    driver.find_element(By.NAME, "password").send_keys("TargetUp2024@@")
-    driver.find_element(By.CSS_SELECTOR, "button.button-primary-blue").click()
-    time.sleep(3)
-    print("✅ Logged in successfully.")
-except Exception as e:
-    print(f"❌ Login failed: {e}")
 
 # ------------------------
 # Collect tender URLs
