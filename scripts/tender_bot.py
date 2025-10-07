@@ -115,10 +115,12 @@ def robust_login(driver, wait, username, password):
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
         ActionChains(driver).move_to_element(submit_button).click().perform()
         log("ℹ️ Submit button clicked.")
-        
-        time.sleep(2)
-        continue_button = wait.until(EC.element_to_be_clickable(driver.find_element(By.XPATH, "//button[normalize-space()='Continue signing in']")))
-        continue_button.click()
+
+        continue_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Continue signing in']"))
+            )
+        driver.execute_script("arguments[0].click();", continue_button)
+        log("➡️ Clicked 'Continue signing in'.")
 
 
         # 5️⃣ Verify login
