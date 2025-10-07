@@ -149,7 +149,8 @@ try:
     print("✅ Accepted cookies.")
 except TimeoutException:
     print("⚠️ No cookie popup found.")
-
+    
+robust_login(driver, wait, USERNAME, PASSWORD)
 # ------------------------
 # Collect tender URLs
 # ------------------------
