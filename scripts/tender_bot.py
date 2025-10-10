@@ -20,6 +20,31 @@ from selenium.webdriver.common.action_chains import ActionChains
 # ------------------------
 # Configuration
 # ------------------------
+
+options = webdriver.ChromeOptions()
+
+# --- Your usual options ---
+options.add_argument("--headless=new")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--window-size=1920,1080")
+
+# --- Location override ---
+options.add_experimental_option("prefs", {
+    "profile.default_content_setting_values.geolocation": 1  # 1 = allow
+})
+
+service = Service("/usr/bin/chromedriver")
+driver = webdriver.Chrome(service=service, options=options)
+
+# Use Chrome DevTools Protocol (CDP) to set geolocation
+driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+    "latitude": 33.5731,     # Morocco latitude (Casablanca)
+    "longitude": -7.5898,    # Morocco longitude
+    "accuracy": 100
+})
+
+
 DOWNLOAD_DIR = "/home/runner/work/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -43,10 +68,21 @@ options.add_argument("--no-sandbox")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
+# --- Location override ---
+options.add_experimental_option("prefs", {
+    "profile.default_content_setting_values.geolocation": 1  # 1 = allow
+})
+
 
 service = Service("/usr/bin/chromedriver")
 driver = webdriver.Chrome(service=service, options=options)
 wait = WebDriverWait(driver, 20)
+
+driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+    "latitude": 33.5731,     # Morocco latitude (Casablanca)
+    "longitude": -7.5898,    # Morocco longitude
+    "accuracy": 100
+})
 
 # ------------------------
 # Logging helper
