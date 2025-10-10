@@ -8,14 +8,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------
+      # Checkout repository
+      # ------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ------------------------
+      # Set up Python
+      # ------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.9.12"
 
+      # ------------------------
+      # Install Chrome & ChromeDriver
+      # ------------------------
       - name: Install Chrome and ChromeDriver
         run: |
           sudo apt-get update
@@ -29,24 +38,38 @@ jobs:
           sudo chmod +x /usr/local/bin/chromedriver
           rm -rf chromedriver-linux64*
 
+      # ------------------------
+      # Install Python dependencies
+      # ------------------------
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      # ------------------------
+      # Run Tender Bot
+      # ------------------------
       - name: Run Tender Bot
         env:
           PYTHONUNBUFFERED: 1
         run: python scripts/tender_bot.py
 
+      # ------------------------
+      # Upload downloaded tender files
+      # ------------------------
       - name: Upload downloaded files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tender_downloads
-          path: /home/runner/downloads   # match your Python DOWNLOAD_DIR
+          path: /home/runner/work/downloads   # match your Python DOWNLOAD_DIR
 
+      # ------------------------
+      # Upload login failure screenshots
+      # ------------------------
       - name: Upload login screenshots
-        uses: actions/upload-artifact@v3
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: login-screenshots
           path: login_debug_*.png
