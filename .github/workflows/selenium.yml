@@ -37,11 +37,16 @@ jobs:
       - name: Run Tender Bot
         env:
           PYTHONUNBUFFERED: 1
-        run: |
-          python scripts/tender_bot.py
+        run: python scripts/tender_bot.py
 
       - name: Upload downloaded files
         uses: actions/upload-artifact@v4
         with:
           name: tender_downloads
-          path: /home/runner/downloads
+          path: /home/runner/downloads   # match your Python DOWNLOAD_DIR
+
+      - name: Upload login screenshots
+        uses: actions/upload-artifact@v3
+        with:
+          name: login-screenshots
+          path: login_debug_*.png
