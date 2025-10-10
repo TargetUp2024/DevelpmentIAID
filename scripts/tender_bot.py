@@ -57,6 +57,9 @@ def log(msg):
 # ------------------------
 # Login
 # ------------------------
+# ------------------------
+# Login
+# ------------------------
 def robust_login(driver, wait, username, password):
     try:
         log("🔐 Attempting login...")
@@ -75,8 +78,9 @@ def robust_login(driver, wait, username, password):
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
         ActionChains(driver).move_to_element(submit_button).click().perform()
         log("ℹ️ Login form submitted.")
-        time.sleep(5)
+        time.sleep(3)
 
+        # Optional "Continue signing in" step
         try:
             continue_btn = driver.find_element(By.XPATH, "//button[normalize-space()='Continue signing in']")
             continue_btn.click()
@@ -84,12 +88,17 @@ def robust_login(driver, wait, username, password):
         except Exception:
             pass
 
+        # Wait for login to succeed
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".account-user__menu-toggle")))
         log("✅ Login successful!")
 
     except Exception as e:
-        log(f"❌ Login failed: {e}")
-        driver.save_screenshot("login_debug.png")
+        # Timestamped screenshot
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = f"login_debug_{timestamp}.png"
+        driver.save_screenshot(screenshot_path)
+        log(f"❌ Login failed: {e}. Screenshot saved: {screenshot_path}")
+
 
 # ------------------------
 # Webhook sender
