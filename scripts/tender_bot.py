@@ -3,7 +3,7 @@ import time
 import zipfile
 import mimetypes
 import requests
-from datetime import datetime 
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -37,16 +37,14 @@ prefs = {
     "safebrowsing.enabled": True,
 }
 options.add_experimental_option("prefs", prefs)
-# options.add_argument("--headless=new")
-options.add_argument("--headless=chrome")
+options.add_argument("--headless=new")
 options.add_argument("--no-sandbox")
-options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--window-size=1920,1080")
 
 service = Service("/usr/bin/chromedriver")
 driver = webdriver.Chrome(service=service, options=options)
-wait = WebDriverWait(driver, 20)
+wait = WebDriverWait(driver, 15)
 
 # ------------------------
 # Logging helper
@@ -75,7 +73,7 @@ def robust_login(driver, wait, username, password):
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
         ActionChains(driver).move_to_element(submit_button).click().perform()
         log("ℹ️ Login form submitted.")
-        time.sleep(5)
+        time.sleep(3)
 
         try:
             continue_btn = driver.find_element(By.XPATH, "//button[normalize-space()='Continue signing in']")
