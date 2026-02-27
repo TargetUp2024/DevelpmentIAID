@@ -242,16 +242,26 @@ if __name__ == "__main__":
 
 
 
+import time  # <--- MAKE SURE THIS IS IMPORTED (you can put it at the very top of your file)
+import pandas as pd
+
 # Loop through each row in the DataFrame
 for idx, row in final_df.iterrows():
+    
+    # Safely handle missing text (in case a document failed to download/extract)
+    extracted_text = row["text"]
+    if pd.isna(extracted_text):
+        extracted_text = "No attachments or text extracted."
+        
     payload = {
         "title": row["title"],
         "url": row["link"],
         "deadline" : row['deadline'],
-        "attachments": row["text"]
+        "attachments": extracted_text
     }
 
-    print(f"\n🚀 Sending row {idx+1}/{len(df)} to n8n...")
+    # FIX: Changed len(df) to len(final_df)
+    print(f"\n🚀 Sending row {idx+1}/{len(final_df)} to n8n...")
     
     try:
         response = requests.post(WEBHOOK_URL, json=payload)
@@ -261,7 +271,7 @@ for idx, row in final_df.iterrows():
         else:
             print(f"❌ Row {idx+1} failed with status code: {response.status_code}")
             print(response.text)
-            time.sleep(2)
+            time.sleep(2)  # <--- This requires 'import time'
 
     except Exception as e:
         print(f"❌ Error sending row {idx+1}: {e}")
