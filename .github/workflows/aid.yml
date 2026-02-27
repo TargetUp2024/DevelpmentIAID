@@ -36,4 +36,4 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
         run: |
-          python main2.py
+          python scripts/main2.py
