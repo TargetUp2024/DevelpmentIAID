@@ -34,6 +34,6 @@ jobs:
       - name: Run scraper script
         env:
           API_KEY: ${{ secrets.API_KEY }}
-          WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }} 
         run: |
           python scripts/main2.py
