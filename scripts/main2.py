@@ -112,7 +112,7 @@ def run_pipeline():
         "size": 300,
         "sort": "posted_date.desc",
         "filter": {
-            "locations": [3],
+            "locations": [11,12,13,14,16,17,68,67,65,63,62,56,55,54,51,49,48,47,46,45,43,42,41,40,39,37,36,35,34,33,32,31,30,28,24,23,22,21,20,19,18], #3 for africa
             "postedFrom": yesterday
         }
     }
