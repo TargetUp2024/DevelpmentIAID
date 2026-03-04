@@ -109,7 +109,7 @@ def run_pipeline():
 
     search_payload = {
         "page": 1,
-        "size": 10,
+        "size": 300,
         "sort": "posted_date.desc",
         "filter": {
             "locations": [3],
