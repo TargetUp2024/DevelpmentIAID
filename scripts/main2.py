@@ -5,10 +5,12 @@ import fitz  # PyMuPDF
 from docx import Document
 import pytesseract
 from pdf2image import convert_from_path
-from PIL import Image  # Required for Image OCR
+from PIL import Image
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import tempfile
+import time
+import re # Added for text cleanup
 
 # --------------------------------------------------
 # CONFIG (GitHub Actions friendly)
@@ -29,6 +31,7 @@ yesterday = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 print("✅ Script started")
 print(f"🔑 API KEY loaded: {'YES' if API_KEY else 'NO'}")
+print(f"🔗 n8n WEBHOOK URL loaded: {'YES' if WEBHOOK_URL else 'NO'}")
 
 # --------------------------------------------------
 # OCR FALLBACK (PDF ONLY)
@@ -44,8 +47,8 @@ def perform_pdf_ocr(file_path):
         print("    ✅ PDF OCR completed")
         return text.strip()
     except Exception as e:
-        print(f"    ⚠️ PDF OCR failed or missing dependencies (Poppler/Tesseract). Skipping document...")
-        return ""  # Return empty string to continue gracefully
+        print(f"    ⚠️ PDF OCR failed or missing dependencies. Skipping...")
+        return ""
 
 # --------------------------------------------------
 # SMART CONTENT EXTRACTION
@@ -55,7 +58,6 @@ def extract_content(file_path):
     text = ""
 
     try:
-        # -------- PDF --------
         if ext == ".pdf":
             print("    📄 Extracting PDF with Fitz")
             doc = fitz.open(file_path)
@@ -68,31 +70,23 @@ def extract_content(file_path):
                 print("    ⚠️ No text layer found in PDF")
                 text = perform_pdf_ocr(file_path)
 
-        # -------- IMAGES (PNG, JPG, JPEG) --------
-        elif ext in [".png", ".jpg", ".jpeg"]:
+        elif ext in[".png", ".jpg", ".jpeg"]:
             print(f"    🖼️ Running OCR on Image ({ext})")
-            try:
-                img = Image.open(file_path)
-                text = pytesseract.image_to_string(img).strip()
-                print(f"    ✅ Image OCR completed ({len(text)} chars)")
-            except Exception as e:
-                print(f"    ⚠️ Image OCR failed or Tesseract missing. Skipping document...")
-                text = "" # Return empty string to continue gracefully
+            img = Image.open(file_path)
+            text = pytesseract.image_to_string(img).strip()
+            print(f"    ✅ Image OCR completed ({len(text)} chars)")
 
-        # -------- DOCX --------
         elif ext == ".docx":
             print("    📝 Extracting DOCX")
             doc = Document(file_path)
             text = "\n".join(p.text for p in doc.paragraphs).strip()
             print(f"    ✅ DOCX extracted ({len(text)} chars)")
 
-        # -------- TXT / CSV --------
         elif ext in [".txt", ".csv"]:
             print("    📄 Reading TXT/CSV")
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read().strip()
 
-        # -------- XML --------
         elif ext == ".xml":
             print("    📄 Extracting XML")
             tree = ET.parse(file_path)
@@ -139,21 +133,22 @@ def run_pipeline():
         print(f"\n➡️ Tender {i}/{len(items)}")
 
         deadline_str = item.get("deadline")
+        
+        # FIX 1: Allow offers without deadlines to process
         if not deadline_str:
-            print("   ⚠️ No deadline, skipped")
-            continue
-
-        deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d")
-        if deadline_dt <= deadline_threshold:
-            print(f"   ⛔ Deadline too close ({deadline_str}), skipped")
-            continue
+            print("   ⚠️ No deadline. Will process anyway.")
+            deadline_str = "Not Specified"
+        else:
+            deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d")
+            if deadline_dt <= deadline_threshold:
+                print(f"   ⛔ Deadline too close ({deadline_str}), skipped")
+                continue
 
         tender_id = item.get("id")
         title = item.get("name") 
         
         print(f"   🆔 Tender ID: {tender_id}")
 
-        # Fetch Detailed info
         details_res = requests.get(f"{BASE_URL}/{tender_id}", headers=HEADERS)
         details = details_res.json() if details_res.status_code == 200 else {}
         
@@ -162,7 +157,6 @@ def run_pipeline():
         print(f"   🏷️ Title: {title[:40]}..." if title else "   🏷️ Title: None")
         print(f"   🔗 Link: {link}")
 
-        # Append to our main rows (Notice: reference is removed)
         main_rows.append({
             "tender_id": tender_id,
             "title": title,  
@@ -181,10 +175,7 @@ def run_pipeline():
             bin_headers = HEADERS.copy()
             bin_headers["Accept"] = "application/octet-stream"
 
-            file_res = requests.get(
-                f"{BASE_URL}/{tender_id}/documents/{doc_id}",
-                headers=bin_headers
-            )
+            file_res = requests.get(f"{BASE_URL}/{tender_id}/documents/{doc_id}", headers=bin_headers)
             
             if file_res.status_code == 200:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as tmp:
@@ -195,11 +186,8 @@ def run_pipeline():
                 os.remove(tmp_path)
                 print(f"   🧹 Temp file deleted")
 
-                # Only append if we actually extracted something
                 if text:
-                    # Format text with file name header
                     formatted_text = f"=== File: {file_name} ===\n{text}\n"
-                    
                     extracted_rows.append({
                         "tender_id": tender_id,
                         "formatted_text": formatted_text
@@ -215,63 +203,73 @@ def run_pipeline():
     df_text = pd.DataFrame(extracted_rows)
 
     if not df_text.empty:
-        # Group by tender_id and join all documents' formatted texts together
-        df_merged_text = df_text.groupby("tender_id")["formatted_text"].apply(
-            lambda x: "\n".join(x)
-        ).reset_index()
-        
-        # Rename the column back to "text"
+        df_merged_text = df_text.groupby("tender_id")["formatted_text"].apply(lambda x: "\n".join(x)).reset_index()
         df_merged_text.rename(columns={"formatted_text": "text"}, inplace=True)
-        
         final_df = df_main.merge(df_merged_text, on="tender_id", how="left")
     else:
         final_df = df_main.copy()
-        final_df["text"] = None
+        if not final_df.empty:
+            final_df["text"] = None
 
     print("✅ Pipeline finished successfully")
     return final_df
+
 
 # --------------------------------------------------
 # ENTRY POINT
 # --------------------------------------------------
 if __name__ == "__main__":
     final_df = run_pipeline()
-    print("\n📄 FINAL DF PREVIEW:")
-    #print(final_df.head())
-    print(f"\n📦 Total rows: {len(final_df)}")
-
-
-
-import time  # <--- MAKE SURE THIS IS IMPORTED (you can put it at the very top of your file)
-import pandas as pd
-
-# Loop through each row in the DataFrame
-for idx, row in final_df.iterrows():
     
-    # Safely handle missing text (in case a document failed to download/extract)
-    extracted_text = row["text"]
-    if pd.isna(extracted_text):
-        extracted_text = "No attachments or text extracted."
-        
-    payload = {
-        "title": row["title"],
-        "url": row["link"],
-        "deadline" : row['deadline'],
-        "attachments": extracted_text
-    }
+    if final_df.empty:
+        print("\n⚠️ No tenders processed. Exiting.")
+        exit()
 
-    # FIX: Changed len(df) to len(final_df)
-    print(f"\n🚀 Sending row {idx+1}/{len(final_df)} to n8n...")
-    
-    try:
-        response = requests.post(WEBHOOK_URL, json=payload)
+    print(f"\n📦 Total rows to send to n8n: {len(final_df)}")
+
+    # Ensure webhook is provided before trying to send
+    if not WEBHOOK_URL:
+        print("❌ CRITICAL: N8N_WEBHOOK_URL environment variable is missing!")
+        exit(1)
+
+    # Loop through each row in the DataFrame to send to n8n
+    for idx, row in final_df.iterrows():
         
-        if response.status_code == 200:
-            print(f"✅ Row {idx+1} successfully sent and acknowledged by n8n.")
+        extracted_text = row.get("text")
+        
+        # Safely handle missing text
+        if pd.isna(extracted_text) or not str(extracted_text).strip():
+            extracted_text = "No attachments or text extracted."
         else:
-            print(f"❌ Row {idx+1} failed with status code: {response.status_code}")
-            print(response.text)
-            time.sleep(2)  # <--- This requires 'import time'
+            # FIX 2: Clean up messy text (removes huge blocks of empty newlines)
+            extracted_text = re.sub(r'\n+', '\n', str(extracted_text)).strip()
+            
+            # FIX 3: TRUNCATE text to prevent n8n "Payload Too Large" crash
+            # limits text to ~5,000 characters
+            MAX_CHARS = 5000
+            if len(extracted_text) > MAX_CHARS:
+                extracted_text = extracted_text[:MAX_CHARS] + "\n\n... [TEXT TRUNCATED BECAUSE IT WAS TOO LONG] ..."
+            
+        payload = {
+            "title": row["title"],
+            "url": row["link"],
+            "deadline": row['deadline'],
+            "attachments": extracted_text
+        }
 
-    except Exception as e:
-        print(f"❌ Error sending row {idx+1}: {e}")
+        print(f"\n🚀 Sending tender '{row['title'][:30]}...' ({idx+1}/{len(final_df)}) to n8n...")
+        
+        try:
+            response = requests.post(WEBHOOK_URL, json=payload)
+            
+            if response.status_code == 200:
+                print(f"✅ Row {idx+1} successfully sent to n8n.")
+            else:
+                print(f"❌ Row {idx+1} failed with status code: {response.status_code}")
+                print(f"   Reason: {response.text}")
+            
+            # Pause to not overwhelm n8n limits
+            time.sleep(2) 
+
+        except Exception as e:
+            print(f"❌ Error sending row {idx+1}: {e}")
